@@ -4,6 +4,8 @@ import { useRef } from "react";
 import { MODES } from "./utils/modes";
 import { useWindowSize } from "./utils/hooks";
 
+import MoveableComponent from "./MoveableComponent";
+
 function App() {
   const settings = useRef({
     stroke: 2,
@@ -16,6 +18,7 @@ function App() {
   return (
     <div className="app">
       <div className="canvas-container">
+        {/* <MoveableComponent /> */}
         <Canvas {...size} settings={settings} />
       </div>
     </div>

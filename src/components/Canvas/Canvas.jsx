@@ -13,6 +13,16 @@ const previewPen = (point, ctx) => {
   lastPath.push(point);
 };
 
+// Draw Line Function
+const drawLine = (path, ctx) => {
+  if (path.length < 2) return;
+  const [start, end] = path;
+  ctx.beginPath();
+  ctx.moveTo(start.x, start.y);
+  ctx.lineTo(end.x, end.y);
+  ctx.stroke();
+};
+
 const drawPen = (points, ctx) => {
   ctx.beginPath();
   ctx.moveTo(points[0][0], points[0][1]);
@@ -28,15 +38,20 @@ const prevent = (e) => {
 };
 
 const modeButtons = [
-  {
-    mode: MODES.PAN,
-    title: "move",
-    icon: "move.svg",
-  },
+  // {
+  //   mode: MODES.PAN,
+  //   title: "move",
+  //   icon: "move.svg",
+  // },
   {
     mode: MODES.PEN,
     title: "pen",
     icon: "pen.svg",
+  },
+  {
+    mode: MODES.LINE,
+    title: "line",
+    icon: "line.svg",
   },
   {
     mode: MODES.RECT,
@@ -71,6 +86,11 @@ const Canvas = ({ settings, ...rest }) => {
   const moving = useRef(false);
   const history = useRef([]);
   const redoHistory = useRef([]);
+  const draggingLine = useRef(null); // Use useRef for draggingLine
+
+  const changeColor = (e) => {
+    settings.current.color = e.target.value;
+  };
 
   const drawCanvas = (ctx) => {
     clearCanvas(ctx);
@@ -78,6 +98,13 @@ const Canvas = ({ settings, ...rest }) => {
       getContext(item, ctx);
       drawModes(item.mode, ctx, null, item.path);
     }
+  };
+
+  const previewLine = (path, ctx) => {
+    if (path.length < 2) return;
+    ctx.beginPath();
+    drawCanvas(ctx);
+    drawLine(path, ctx);
   };
 
   const onPointerUp = (e) => {
@@ -95,6 +122,18 @@ const Canvas = ({ settings, ...rest }) => {
       });
       redoHistory.current = [];
       lastPath = [];
+      drawCanvas(getContext());
+    }
+
+    if (draggingLine.current) {
+      // Update history with the new path of the dragged line
+      const index = history.current.findIndex(
+        (item) => item === draggingLine.current
+      );
+      if (index !== -1) {
+        history.current[index] = { ...draggingLine.current };
+      }
+      draggingLine.current = null;
       drawCanvas(getContext());
     }
   };
@@ -137,6 +176,7 @@ const Canvas = ({ settings, ...rest }) => {
   const onPointerMove = (e) => {
     prevent(e);
     if (moving.current) return onCanvasMove(e, context.current);
+    if (draggingLine.current) return onDragLineMove(e);
     if (!draw.current) return;
     const point = getPoints(e, context.current);
     drawModes(settings.current.mode, context.current, point, lastPath);
@@ -148,9 +188,11 @@ const Canvas = ({ settings, ...rest }) => {
   };
 
   const getPoints = (e, ctx) => {
-    const { e: dx, f: dy } = ctx.getTransform();
-    const rect = canvas.current.getBoundingClientRect();
-    return [e.clientX - rect.x - dx, e.clientY - rect.y - dy];
+    if (ctx) {
+      const { e: dx, f: dy } = ctx.getTransform();
+      const rect = canvas.current.getBoundingClientRect();
+      return [e.clientX - rect.x - dx, e.clientY - rect.y - dy];
+    }
   };
 
   const getContext = (config, ctx) => {
@@ -159,66 +201,80 @@ const Canvas = ({ settings, ...rest }) => {
     }
     if (!ctx) ctx = context.current;
     if (config) {
-      ctx.strokeStyle = config.color;
-      ctx.lineWidth = config.stroke;
-      ctx.lineCap = "miter";
-      ctx.lineJoin = "miter";
+      ctx.globalAlpha = config.alpha ?? 1;
+      ctx.strokeStyle = config.stroke ?? "#000000";
+      ctx.fillStyle = config.fill ?? "#000000";
+      ctx.lineWidth = config.lineWidth ?? 1;
     }
     return ctx;
-  };
-
-  const changeColor = (e) => {
-    settings.current.color = e.target.value;
   };
 
   const drawModes = (mode, ctx, point, path) => {
     switch (mode) {
       case MODES.PEN:
-        point ? previewPen(point, ctx) : drawPen(path, ctx);
+        if (point) previewPen(point, ctx);
+        else drawPen(path, ctx);
         break;
-      // case MODES.RECT:
-      //   if (point) {
-      //     path.length === 0 ? (path[0] = point) : (path[1] = point);
-      //     previewRect(path, ctx);
-      //   } else {
-      //     drawRect(path, ctx);
-      //   }
-      //   break;
-      // case MODES.CIRCLE:
-      //   if (point) {
-      //     path.length === 0 ? (path[0] = point) : (path[1] = point);
-      //     previewCircle(path, ctx);
-      //   } else {
-      //     drawCircle(path, ctx);
-      //   }
-      //   break;
+      case MODES.LINE:
+        if (point) {
+          // path.length === 0 ? (path[0] = point) : (path[1] = point);
+
+          console.log("point", point);
+          if (path.length === 0) {
+            path[0] = point;
+            path[1] = point;
+          } else {
+            path[1] = point;
+          }
+
+          previewLine(path, ctx);
+        } else {
+          drawLine(path, ctx);
+        }
+        break;
+      case MODES.RECT:
+        if (point) {
+          path.length === 0 ? (path[0] = point) : (path[1] = point);
+          // previewRect(path, ctx);
+        } else {
+          // drawRect(path, ctx);
+        }
+        break;
+      case MODES.CIRCLE:
+        // Your code for drawing circle
+        break;
       default:
-        return;
+        break;
     }
   };
 
-  useEffect(() => {
-    document.addEventListener("pointerup", onPointerUp);
-    document.addEventListener("pointermove", onPointerMove);
-    getContext().setTransform(
-      1,
-      0,
-      0,
-      1,
-      -(PAN_LIMIT - width) / 2,
-      -(PAN_LIMIT - height) / 2
-    );
-    drawCanvas(getContext());
-    updatePreview();
-    return () => {
-      document.removeEventListener("pointerup", onPointerUp);
-      document.removeEventListener("pointermove", onPointerMove);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [width, height]);
+  const findLine = (point) => {
+    for (const item of history.current) {
+      if (item.mode !== MODES.PEN) continue;
+      for (const p of item.path) {
+        const [x, y] = p;
+        if (Math.abs(x - point[0]) < 5 && Math.abs(y - point[1]) < 5) {
+          return item;
+        }
+      }
+    }
+    return null;
+  };
 
   const onPointerDown = (e) => {
     prevent(e);
+
+    if (e.ctrlKey) {
+      const point = getPoints(e, context.current);
+      const line = findLine(point);
+      if (line) {
+        draggingLine.current = line;
+        coords.current = point;
+        return;
+      }
+
+      return;
+    }
 
     getContext(settings.current);
     coords.current = [e.clientX, e.clientY];
@@ -232,6 +288,63 @@ const Canvas = ({ settings, ...rest }) => {
     const point = getPoints(e, context.current);
     lastPath = [];
     drawModes(settings.current.mode, context.current, point, lastPath);
+  };
+
+  const onDragLineMove = (e) => {
+    const point = getPoints(e, context.current);
+
+    const [dx, dy] = [
+      point[0] - coords.current[0],
+      point[1] - coords.current[1],
+    ];
+
+    const updatedLine = draggingLine.current.path.map(([x, y]) => [
+      x + dx,
+      y + dy,
+    ]);
+
+    draggingLine.current.path = updatedLine;
+    coords.current = point;
+    drawCanvas(context.current);
+  };
+
+  useEffect(() => {
+    const canvasEl = canvas.current;
+    canvasEl.addEventListener("pointermove", onPointerMove);
+    canvasEl.addEventListener("pointerup", onPointerUp);
+    canvasEl.addEventListener("pointerdown", onPointerDown);
+
+    const handleKeyUp = (e) => {
+      if (e.key === "Control" && draggingLine.current) {
+        draggingLine.current = null;
+      }
+    };
+
+    window.addEventListener("keyup", handleKeyUp);
+
+    return () => {
+      canvasEl.removeEventListener("pointermove", onPointerMove);
+      canvasEl.removeEventListener("pointerup", onPointerUp);
+      canvasEl.removeEventListener("pointerdown", onPointerDown);
+      window.removeEventListener("keyup", handleKeyUp);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const undoCanvas = (e) => {
+    prevent(e);
+    if (history.current.length === 0) return;
+    redoHistory.current.push(history.current.pop());
+    drawCanvas(getContext());
+    render();
+  };
+
+  const redoCanvas = (e) => {
+    prevent(e);
+    if (redoHistory.current.length === 0) return;
+    history.current.push(redoHistory.current.pop());
+    drawCanvas(getContext());
+    render();
   };
 
   return (
@@ -283,18 +396,18 @@ const Canvas = ({ settings, ...rest }) => {
         <button
           className="button"
           type="button"
-          // onClick={undoCanvas}
-          // disabled={history.current.length === 0}
+          onClick={undoCanvas}
+          disabled={history.current.length === 0}
         >
           <img src="assets/undo.svg" alt="undo" title="undo" />
         </button>
         <button
           className="button"
           type="button"
-          // onClick={redoCanvas}
-          // disabled={redoHistory.current.length === 0}
+          onClick={redoCanvas}
+          disabled={redoHistory.current.length === 0}
         >
-          <img src="assets/redo.svg" alt="redo" title="red" />
+          <img src="assets/redo.svg" alt="redo" title="redo" />
         </button>
       </div>
     </>
